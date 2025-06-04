@@ -35,7 +35,7 @@ const verificarRol = (rolesPermitidos) => {
 };
 //Cors
 app.use(cors({
-  origin: 'http://localhost:5173' // o usa '*' para permitir todos (no recomendado para producción)
+  origin: '*' // o usa '*' para permitir todos (no recomendado para producción)
 }));
 
 // 🧠 Registrar usuario

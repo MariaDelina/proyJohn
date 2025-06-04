@@ -34,9 +34,22 @@ const verificarRol = (rolesPermitidos) => {
   };
 };
 //Cors
+const allowedOrigins = [
+  'http://localhost:3000',
+  'https://wgimportaciones-aec89.web.app'
+];
+
 app.use(cors({
-  origin: '*' // o usa '*' para permitir todos (no recomendado para producción)
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('No permitido por CORS'));
+    }
+  },
+  credentials: true
 }));
+
 
 // 🧠 Registrar usuario
 app.post('/auth/register', async (req, res) => {

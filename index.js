@@ -36,6 +36,7 @@ const verificarRol = (rolesPermitidos) => {
 //Cors
 const allowedOrigins = [
   'http://localhost:3000',
+  'http://localhost:5173',
   'https://wgimportaciones-aec89.web.app'
 ];
 

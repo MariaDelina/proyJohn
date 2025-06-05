@@ -345,6 +345,34 @@ app.put('/detalle-ordenes/:id/cantidad', verificarToken, async (req, res) => {
     res.status(500).send('Error del servidor');
   }
 });
+// Actualizacion cantidad real para cuando es diferente a cantidad
+app.put('/detalle-ordenes/:id/cantidad-real', verificarToken, async (req, res) => {
+  const detalleID = req.params.id;
+  const { cantidadReal } = req.body;
+
+  if (cantidadReal == null) {
+    return res.status(400).send('Falta la cantidad real');
+  }
+
+  try {
+    await poolConnect;
+    const result = await pool
+      .request()
+      .input('DetalleID', sql.Int, detalleID)
+      .input('CantidadReal', sql.Int, cantidadReal)
+      .query('UPDATE dbo.DetalleOrdenes SET CantidadReal = @CantidadReal WHERE DetalleID = @DetalleID');
+
+    if (result.rowsAffected[0] === 0) {
+      return res.status(404).send('Detalle no encontrado');
+    }
+
+    res.send(`CantidadReal actualizada para DetalleID ${detalleID}`);
+  } catch (error) {
+    console.error('Error al actualizar la cantidad real:', error);
+    res.status(500).send('Error del servidor');
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`💫 Servidor corriendo en http://localhost:${PORT}`);
 });

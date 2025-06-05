@@ -398,18 +398,20 @@ app.put('/ordenes/:id/finalizar', verificarToken, async (req, res) => {
   }
 
   try {
-    await poolConnect; // Esperar conexión
+    await poolConnect;
 
     const result = await pool.request()
       .input('FechaAlistamiento', sql.DateTime, new Date(FechaAlistamiento))
       .input('FechaFinSacado', sql.DateTime, new Date(FechaFinSacado))
       .input('Sacador', sql.NVarChar(100), Sacador)
       .input('OrdenID', sql.Int, id)
+      .input('Estado', sql.NVarChar(50), 'Listo para empacar')  // nuevo input para el estado
       .query(`
         UPDATE dbo.Ordenes
         SET FechaAlistamiento = @FechaAlistamiento,
             FechaFinSacado = @FechaFinSacado,
-            Sacador = @Sacador
+            Sacador = @Sacador,
+            Estado = @Estado
         WHERE Orden = @OrdenID
       `);
 
@@ -417,7 +419,7 @@ app.put('/ordenes/:id/finalizar', verificarToken, async (req, res) => {
       return res.status(404).json({ message: 'Orden no encontrada' });
     }
 
-    res.status(200).json({ message: 'Orden finalizada con éxito' });
+    res.status(200).json({ message: 'Orden finalizada con éxito y estado actualizado' });
   } catch (error) {
     console.error('Error al finalizar orden:', error);
     res.status(500).json({ message: 'Error al finalizar orden', error: error.message });

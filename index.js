@@ -177,9 +177,10 @@ app.get('/detalle-ordenes/:id', verificarToken, async (req, res) => {
 app.put('/ordenes/:id/estado', verificarToken, async (req, res) => {
   const { id } = req.params;
 
-  // Suponiendo que el nombre del sacador viene del token decodificado
   const nombreSacador = req.user?.Nombre || req.user?.username || 'Desconocido';
-  const fechaActual = new Date().toISOString();
+
+  // Fecha y hora actual en la zona horaria de Colombia
+  const fechaColombia = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }));
 
   try {
     await poolConnect;
@@ -188,7 +189,7 @@ app.put('/ordenes/:id/estado', verificarToken, async (req, res) => {
       .request()
       .input('OrdenID', sql.Int, id)
       .input('Estado', sql.VarChar, 'En Proceso')
-      .input('FechaInicio', sql.DateTime, fechaActual)
+      .input('FechaInicio', sql.DateTime, fechaColombia)
       .input('Sacador', sql.VarChar, nombreSacador)
       .query(`
         UPDATE dbo.Ordenes
@@ -209,6 +210,7 @@ app.put('/ordenes/:id/estado', verificarToken, async (req, res) => {
     res.status(500).send('Error del servidor');
   }
 });
+
 
 
 
@@ -391,9 +393,12 @@ app.put('/detalle-ordenes/:id/cantidad-real', verificarToken, async (req, res) =
 
 app.put('/ordenes/:id/finalizar', verificarToken, async (req, res) => {
   const { id } = req.params;
-  const { FechaAlistamiento, FechaFinSacado, Sacador } = req.body;
+  const { FechaAlistamiento, FechaFinSacado } = req.body;
 
-  if (!FechaAlistamiento || !FechaFinSacado || !Sacador) {
+  // Obtener nombre del usuario desde el token
+  const Sacador = req.user.Nombre || req.user.username || 'Desconocido';
+
+  if (!FechaAlistamiento || !FechaFinSacado) {
     return res.status(400).json({ message: 'Faltan datos requeridos.' });
   }
 
@@ -405,7 +410,7 @@ app.put('/ordenes/:id/finalizar', verificarToken, async (req, res) => {
       .input('FechaFinSacado', sql.DateTime, new Date(FechaFinSacado))
       .input('Sacador', sql.NVarChar(100), Sacador)
       .input('OrdenID', sql.Int, id)
-      .input('Estado', sql.NVarChar(50), 'Listo para empacar')  // nuevo input para el estado
+      .input('Estado', sql.NVarChar(50), 'Listo para empacar')
       .query(`
         UPDATE dbo.Ordenes
         SET FechaAlistamiento = @FechaAlistamiento,
@@ -425,6 +430,7 @@ app.put('/ordenes/:id/finalizar', verificarToken, async (req, res) => {
     res.status(500).json({ message: 'Error al finalizar orden', error: error.message });
   }
 });
+
 
 
 

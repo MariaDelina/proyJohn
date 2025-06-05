@@ -356,22 +356,67 @@ app.put('/detalle-ordenes/:id/cantidad-real', verificarToken, async (req, res) =
 
   try {
     await poolConnect;
-    const result = await pool
+
+    // Primero, obtenemos la cantidad actual
+    const currentResult = await pool
       .request()
       .input('DetalleID', sql.Int, detalleID)
-      .input('CantidadReal', sql.Int, cantidadReal)
-      .query('UPDATE dbo.DetalleOrdenes SET CantidadReal = @CantidadReal WHERE DetalleID = @DetalleID');
+      .query('SELECT CantidadReal FROM dbo.DetalleOrdenes WHERE DetalleID = @DetalleID');
 
-    if (result.rowsAffected[0] === 0) {
+    if (currentResult.recordset.length === 0) {
       return res.status(404).send('Detalle no encontrado');
     }
 
-    res.send(`CantidadReal actualizada para DetalleID ${detalleID}`);
+    const cantidadActual = currentResult.recordset[0].CantidadReal || 0;
+
+    // Sumamos la cantidad enviada con la cantidad actual
+    const nuevaCantidad = cantidadActual + cantidadReal;
+
+    // Actualizamos la base de datos con la suma
+    const updateResult = await pool
+      .request()
+      .input('DetalleID', sql.Int, detalleID)
+      .input('CantidadReal', sql.Int, nuevaCantidad)
+      .query('UPDATE dbo.DetalleOrdenes SET CantidadReal = @CantidadReal WHERE DetalleID = @DetalleID');
+
+    if (updateResult.rowsAffected[0] === 0) {
+      return res.status(404).send('Detalle no encontrado');
+    }
+
+    res.send(`CantidadReal actualizada para DetalleID ${detalleID}, nueva cantidad: ${nuevaCantidad}`);
   } catch (error) {
     console.error('Error al actualizar la cantidad real:', error);
     res.status(500).send('Error del servidor');
   }
 });
+
+// ✅ Ruta para finalizar una orden 
+app.put('/ordenes/:id/finalizar', async (req, res) => {
+  const { id } = req.params;
+  const { FechaAlistamiento, FechaSacado, Sacador } = req.body;
+
+  // Validación básica
+  if (!FechaAlistamiento || !FechaSacado || !Sacador) {
+    return res.status(400).json({ message: 'Faltan datos requeridos.' });
+  }
+
+  try {
+    const sql = `
+      UPDATE Ordenes
+      SET FechaAlistamiento = ?, FechaSacado = ?, Sacador = ?
+      WHERE OrdenID = ?
+    `;
+
+    await db.query(sql, [FechaAlistamiento, FechaSacado, Sacador, id]);
+
+    res.status(200).json({ message: 'Orden finalizada con éxito' });
+  } catch (error) {
+    console.error('Error al finalizar orden:', error);
+    res.status(500).json({ message: 'Error al finalizar orden' });
+  }
+});
+
+
 
 app.listen(PORT, () => {
   console.log(`💫 Servidor corriendo en http://localhost:${PORT}`);

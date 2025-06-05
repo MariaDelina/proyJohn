@@ -393,20 +393,20 @@ app.put('/detalle-ordenes/:id/cantidad-real', verificarToken, async (req, res) =
 // ✅ Ruta para finalizar una orden 
 app.put('/ordenes/:id/finalizar', async (req, res) => {
   const { id } = req.params;
-  const { FechaAlistamiento, FechaSacado, Sacador } = req.body;
+  const { FechaAlistamiento, FechaFinSacado, Sacador } = req.body;
 
-  if (!FechaAlistamiento || !FechaSacado || !Sacador) {
+  if (!FechaAlistamiento || !FechaFinSacado || !Sacador) {
     return res.status(400).json({ message: 'Faltan datos requeridos.' });
   }
 
   try {
     const sql = `
       UPDATE Ordenes
-      SET FechaAlistamiento = ?, FechaSacado = ?, Sacador = ?
+      SET FechaAlistamiento = ?, FechaFinSacado = ?, Sacador = ?
       WHERE OrdenID = ?
     `;
 
-    await db.query(sql, [FechaAlistamiento, FechaSacado, Sacador, id]);
+    await db.query(sql, [FechaAlistamiento, FechaFinSacado, Sacador, id]);
 
     res.status(200).json({ message: 'Orden finalizada con éxito' });
   } catch (error) {
@@ -414,8 +414,6 @@ app.put('/ordenes/:id/finalizar', async (req, res) => {
     res.status(500).json({ message: 'Error al finalizar orden', error: error.message });
   }
 });
-
-
 
 
 app.listen(PORT, () => {

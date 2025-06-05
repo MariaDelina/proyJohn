@@ -390,8 +390,7 @@ app.put('/detalle-ordenes/:id/cantidad-real', verificarToken, async (req, res) =
   }
 });
 
-// ✅ Ruta para finalizar una orden 
-app.put('/ordenes/:id/finalizar', async (req, res) => {
+app.put('/ordenes/:id/finalizar', verificarToken, async (req, res) => {
   const { id } = req.params;
   const { FechaAlistamiento, FechaFinSacado, Sacador } = req.body;
 
@@ -400,13 +399,24 @@ app.put('/ordenes/:id/finalizar', async (req, res) => {
   }
 
   try {
-    const sql = `
-      UPDATE Ordenes
-      SET FechaAlistamiento = ?, FechaFinSacado = ?, Sacador = ?
-      WHERE OrdenID = ?
-    `;
+    await poolConnect; // Esperar conexión
 
-    await db.query(sql, [FechaAlistamiento, FechaFinSacado, Sacador, id]);
+    const result = await pool.request()
+      .input('FechaAlistamiento', sql.DateTime, new Date(FechaAlistamiento))
+      .input('FechaFinSacado', sql.DateTime, new Date(FechaFinSacado))
+      .input('Sacador', sql.NVarChar(100), Sacador)
+      .input('OrdenID', sql.Int, id)
+      .query(`
+        UPDATE dbo.Ordenes
+        SET FechaAlistamiento = @FechaAlistamiento,
+            FechaFinSacado = @FechaFinSacado,
+            Sacador = @Sacador
+        WHERE Orden = @OrdenID
+      `);
+
+    if (result.rowsAffected[0] === 0) {
+      return res.status(404).json({ message: 'Orden no encontrada' });
+    }
 
     res.status(200).json({ message: 'Orden finalizada con éxito' });
   } catch (error) {
@@ -414,6 +424,7 @@ app.put('/ordenes/:id/finalizar', async (req, res) => {
     res.status(500).json({ message: 'Error al finalizar orden', error: error.message });
   }
 });
+
 
 
 app.listen(PORT, () => {

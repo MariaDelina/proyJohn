@@ -395,7 +395,6 @@ app.put('/ordenes/:id/finalizar', async (req, res) => {
   const { id } = req.params;
   const { FechaAlistamiento, FechaSacado, Sacador } = req.body;
 
-  // Validación básica
   if (!FechaAlistamiento || !FechaSacado || !Sacador) {
     return res.status(400).json({ message: 'Faltan datos requeridos.' });
   }
@@ -412,9 +411,10 @@ app.put('/ordenes/:id/finalizar', async (req, res) => {
     res.status(200).json({ message: 'Orden finalizada con éxito' });
   } catch (error) {
     console.error('Error al finalizar orden:', error);
-    res.status(500).json({ message: 'Error al finalizar orden' });
+    res.status(500).json({ message: 'Error al finalizar orden', error: error.message });
   }
 });
+
 
 
 

@@ -357,7 +357,7 @@ app.put('/detalle-ordenes/:id/cantidad-real', verificarToken, async (req, res) =
   try {
     await poolConnect;
 
-    // Primero, obtenemos la cantidad actual
+    // Verificamos que el detalle exista
     const currentResult = await pool
       .request()
       .input('DetalleID', sql.Int, detalleID)
@@ -367,12 +367,10 @@ app.put('/detalle-ordenes/:id/cantidad-real', verificarToken, async (req, res) =
       return res.status(404).send('Detalle no encontrado');
     }
 
-    const cantidadActual = currentResult.recordset[0].CantidadReal || 0;
+    // En vez de sumar, asignamos directamente la cantidad recibida
+    const nuevaCantidad = cantidadReal;
 
-    // Sumamos la cantidad enviada con la cantidad actual
-    const nuevaCantidad = cantidadActual + cantidadReal;
-
-    // Actualizamos la base de datos con la suma
+    // Actualizamos la base de datos con el nuevo valor directamente
     const updateResult = await pool
       .request()
       .input('DetalleID', sql.Int, detalleID)
@@ -389,6 +387,7 @@ app.put('/detalle-ordenes/:id/cantidad-real', verificarToken, async (req, res) =
     res.status(500).send('Error del servidor');
   }
 });
+
 
 app.put('/ordenes/:id/finalizar', verificarToken, async (req, res) => {
   const { id } = req.params;

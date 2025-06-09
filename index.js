@@ -136,6 +136,20 @@ app.get('/ordenes/pendientes', verificarToken, async (req, res) => {
     res.status(500).send('Error del servidor');
   }
 });
+//Empacar Pedido segun estado Listo para empacar
+app.get('/ordenes/listoparaempacar', verificarToken, async (req, res) => {
+  try {
+    await poolConnect;
+    const result = await pool
+      .request()
+      .query("SELECT * FROM dbo.Ordenes WHERE Estado = 'Listo para empacar'");
+
+    res.json(result.recordset);
+  } catch (err) {
+    console.error('Error al obtener órdenes pendientes:', err);
+    res.status(500).send('Error del servidor');
+  }
+});
 
 // recuperar productos y detalles de orden
 app.get('/detalle-ordenes/:id', verificarToken, async (req, res) => {
@@ -171,7 +185,7 @@ app.get('/detalle-ordenes/:id', verificarToken, async (req, res) => {
 });
 
 
-
+//put para estado en Sacar-Pedido
 app.put('/ordenes/:id/estado', verificarToken, async (req, res) => {
   const { id } = req.params;
 
@@ -209,6 +223,43 @@ app.put('/ordenes/:id/estado', verificarToken, async (req, res) => {
   }
 });
 
+// Put para Empacar-Pedido 
+app.put('/ordenes/:id/estado-empaque', verificarToken, async (req, res) => {
+  const { id } = req.params;
+
+  const nombreEmpacador = req.user?.Nombre || req.user?.username || 'Desconocido';
+
+  // Fecha y hora actual en la zona horaria de Colombia
+  const fechaColombia = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }));
+
+  try {
+    await poolConnect;
+
+    const result = await pool
+      .request()
+      .input('OrdenID', sql.Int, id)
+      .input('Estado', sql.VarChar, 'Empacando')
+      .input('FechaInicio', sql.DateTime, fechaColombia)
+      .input('Empacador', sql.VarChar, nombreEmpacador)
+      .query(`
+        UPDATE dbo.Ordenes
+        SET 
+          Estado = @Estado,
+          FechaInicioEmpacado = @FechaInicio,
+          Empacador = @Empacador
+        WHERE Orden = @OrdenID
+      `);
+
+    if (result.rowsAffected[0] === 0) {
+      return res.status(404).json({ mensaje: 'Orden no encontrada' });
+    }
+
+    res.json({ mensaje: 'Orden actualizada a Empacando correctamente' });
+  } catch (err) {
+    console.error('Error al actualizar orden:', err);
+    res.status(500).send('Error del servidor');
+  }
+});
 
 
 

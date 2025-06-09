@@ -150,7 +150,6 @@ app.get('/detalle-ordenes/:id', verificarToken, async (req, res) => {
         SELECT 
           DetalleID,
           OrdenID,
-          ProductoID,
           Cantidad,
           CantidadReal,
           ValorUnitario,

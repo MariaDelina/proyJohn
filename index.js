@@ -245,7 +245,7 @@ app.put('/ordenes/:id/estado-empaque', verificarToken, async (req, res) => {
         UPDATE dbo.Ordenes
         SET 
           Estado = @Estado,
-          FechaInicioEmpacado = @FechaInicio,
+          FechaInicioEmpaque = @FechaInicio,
           Empacador = @Empacador
         WHERE Orden = @OrdenID
       `);

@@ -441,7 +441,7 @@ app.put('/detalle-ordenes/:id/cantidad-real', verificarToken, async (req, res) =
 
 app.put('/detalle-ordenes/:id/cantidad-empacada', verificarToken, async (req, res) => {
   const detalleID = req.params.id;
-  const { cantidadEmpacada } = req.body;
+  const { cantidadEmpacada, caja } = req.body;
 
   if (cantidadEmpacada == null) {
     return res.status(400).send('Falta la cantidad empacada');
@@ -450,33 +450,43 @@ app.put('/detalle-ordenes/:id/cantidad-empacada', verificarToken, async (req, re
   try {
     await poolConnect;
 
-    // Verificar que el detalle exista
+    // Verificar existencia del detalle
     const currentResult = await pool
       .request()
       .input('DetalleID', sql.Int, detalleID)
-      .query('SELECT CantidadEmpacada FROM dbo.DetalleOrdenes WHERE DetalleID = @DetalleID');
+      .query('SELECT DetalleID FROM dbo.DetalleOrdenes WHERE DetalleID = @DetalleID');
 
     if (currentResult.recordset.length === 0) {
       return res.status(404).send('Detalle no encontrado');
     }
 
-    // Actualizar la base de datos con el nuevo valor directamente
+    // Actualizar CantidadEmpacada y Caja
     const updateResult = await pool
       .request()
       .input('DetalleID', sql.Int, detalleID)
       .input('CantidadEmpacada', sql.Int, cantidadEmpacada)
-      .query('UPDATE dbo.DetalleOrdenes SET CantidadEmpacada = @CantidadEmpacada WHERE DetalleID = @DetalleID');
+      .input('Caja', sql.NVarChar(100), caja || '') // guarda string vacío si no hay caja
+      .query(`
+        UPDATE dbo.DetalleOrdenes
+        SET CantidadEmpacada = @CantidadEmpacada, Caja = @Caja
+        WHERE DetalleID = @DetalleID
+      `);
 
     if (updateResult.rowsAffected[0] === 0) {
-      return res.status(404).send('Detalle no encontrado');
+      return res.status(404).send('No se pudo actualizar el detalle');
     }
 
-    res.send(`CantidadEmpacada actualizada para DetalleID ${detalleID}, nueva cantidad: ${cantidadEmpacada}`);
+    res.status(200).json({
+      message: `Detalle ${detalleID} actualizado`,
+      cantidadEmpacada,
+      caja,
+    });
   } catch (error) {
-    console.error('Error al actualizar la cantidad empacada:', error);
+    console.error('Error al actualizar cantidad empacada:', error);
     res.status(500).send('Error del servidor');
   }
 });
+
 
 
 

@@ -439,6 +439,46 @@ app.put('/detalle-ordenes/:id/cantidad-real', verificarToken, async (req, res) =
   }
 });
 
+app.put('/detalle-ordenes/:id/cantidad-empacada', verificarToken, async (req, res) => {
+  const detalleID = req.params.id;
+  const { cantidadEmpacada } = req.body;
+
+  if (cantidadEmpacada == null) {
+    return res.status(400).send('Falta la cantidad empacada');
+  }
+
+  try {
+    await poolConnect;
+
+    // Verificar que el detalle exista
+    const currentResult = await pool
+      .request()
+      .input('DetalleID', sql.Int, detalleID)
+      .query('SELECT CantidadEmpacada FROM dbo.DetalleOrdenes WHERE DetalleID = @DetalleID');
+
+    if (currentResult.recordset.length === 0) {
+      return res.status(404).send('Detalle no encontrado');
+    }
+
+    // Actualizar la base de datos con el nuevo valor directamente
+    const updateResult = await pool
+      .request()
+      .input('DetalleID', sql.Int, detalleID)
+      .input('CantidadEmpacada', sql.Int, cantidadEmpacada)
+      .query('UPDATE dbo.DetalleOrdenes SET CantidadEmpacada = @CantidadEmpacada WHERE DetalleID = @DetalleID');
+
+    if (updateResult.rowsAffected[0] === 0) {
+      return res.status(404).send('Detalle no encontrado');
+    }
+
+    res.send(`CantidadEmpacada actualizada para DetalleID ${detalleID}, nueva cantidad: ${cantidadEmpacada}`);
+  } catch (error) {
+    console.error('Error al actualizar la cantidad empacada:', error);
+    res.status(500).send('Error del servidor');
+  }
+});
+
+
 
 app.put('/ordenes/:id/finalizar', verificarToken, async (req, res) => {
   const { id } = req.params;
@@ -479,6 +519,50 @@ app.put('/ordenes/:id/finalizar', verificarToken, async (req, res) => {
     res.status(500).json({ message: 'Error al finalizar orden', error: error.message });
   }
 });
+
+app.put('/ordenes/:id/finalizar-empaque', verificarToken, async (req, res) => {
+  const { id } = req.params;
+  const { FechaEmpaque, FechaFinEmpaque, Caja } = req.body;
+
+  // Verificamos que los datos necesarios estén presentes
+  if (!FechaEmpaque || !FechaFinEmpaque || !Caja) {
+    return res.status(400).json({ message: 'Faltan datos requeridos: FechaEmpaque, FechaFinEmpaque o Caja.' });
+  }
+
+  const Empacador = req.user?.Nombre || req.user?.username || 'Desconocido';
+
+  try {
+    await poolConnect;
+
+    const result = await pool.request()
+      .input('OrdenID', sql.Int, id)
+      .input('FechaEmpaque', sql.DateTime, new Date(FechaEmpaque))
+      .input('FechaFinEmpaque', sql.DateTime, new Date(FechaFinEmpaque))
+      .input('Empacador', sql.NVarChar(100), Empacador)
+      .input('Caja', sql.NVarChar(50), Caja)
+      .input('Estado', sql.NVarChar(50), 'Listo para despachar')
+      .query(`
+        UPDATE dbo.Ordenes
+        SET 
+          FechaEmpaque = @FechaEmpaque,
+          FechaFinEmpaque = @FechaFinEmpaque,
+          Empacador = @Empacador,
+          Caja = @Caja,
+          Estado = @Estado
+        WHERE Orden = @OrdenID
+      `);
+
+    if (result.rowsAffected[0] === 0) {
+      return res.status(404).json({ message: 'Orden no encontrada' });
+    }
+
+    res.status(200).json({ message: 'Orden finalizada y marcada como "Listo para despachar"' });
+  } catch (error) {
+    console.error('Error al finalizar empaque:', error);
+    res.status(500).json({ message: 'Error al finalizar empaque', error: error.message });
+  }
+});
+
 
 
 

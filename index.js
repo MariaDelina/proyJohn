@@ -148,21 +148,20 @@ app.get('/detalle-ordenes/:id', verificarToken, async (req, res) => {
       .input('OrdenID', sql.Int, id)
       .query(`
         SELECT 
-          d.DetalleID,
-          d.OrdenID,
-          d.ProductoID,
-          d.Cantidad,
-          d.CantidadReal,
-          d.ValorUnitario,
-          d.Ubicacion,
-          d.DetalleAdicional,
-          d.Secuencia,
-          p.Referencia,
-          p.Nombre
-        FROM dbo.DetalleOrdenes d
-        LEFT JOIN dbo.Productos p ON d.ProductoID = p.ID
-        WHERE d.OrdenID = @OrdenID
-        ORDER BY d.Secuencia
+          DetalleID,
+          OrdenID,
+          ProductoID,
+          Cantidad,
+          CantidadReal,
+          ValorUnitario,
+          Ubicacion,
+          DetalleAdicional,
+          Secuencia,
+          Referencia,
+          Descripcion
+        FROM dbo.DetalleOrdenes
+        WHERE OrdenID = @OrdenID
+        ORDER BY Secuencia
       `);
 
     res.json(result.recordset);

@@ -441,7 +441,7 @@ app.put('/detalle-ordenes/:id/cantidad-real', verificarToken, async (req, res) =
 
 app.put('/detalle-ordenes/:id/cantidad-empacada', verificarToken, async (req, res) => {
   const detalleID = req.params.id;
-  const { cantidadEmpacada, caja } = req.body;
+  const { cantidadEmpacada } = req.body;
 
   if (cantidadEmpacada == null) {
     return res.status(400).send('Falta la cantidad empacada');
@@ -450,7 +450,6 @@ app.put('/detalle-ordenes/:id/cantidad-empacada', verificarToken, async (req, re
   try {
     await poolConnect;
 
-    // Verificar existencia del detalle
     const currentResult = await pool
       .request()
       .input('DetalleID', sql.Int, detalleID)
@@ -460,29 +459,70 @@ app.put('/detalle-ordenes/:id/cantidad-empacada', verificarToken, async (req, re
       return res.status(404).send('Detalle no encontrado');
     }
 
-    // Actualizar CantidadEmpacada y Caja
     const updateResult = await pool
       .request()
       .input('DetalleID', sql.Int, detalleID)
       .input('CantidadEmpacada', sql.Int, cantidadEmpacada)
-      .input('Caja', sql.NVarChar(100), caja || '') // guarda string vacío si no hay caja
       .query(`
         UPDATE dbo.DetalleOrdenes
-        SET CantidadEmpacada = @CantidadEmpacada, Caja = @Caja
+        SET CantidadEmpacada = @CantidadEmpacada
         WHERE DetalleID = @DetalleID
       `);
 
     if (updateResult.rowsAffected[0] === 0) {
-      return res.status(404).send('No se pudo actualizar el detalle');
+      return res.status(404).send('No se pudo actualizar la cantidad empacada');
     }
 
     res.status(200).json({
-      message: `Detalle ${detalleID} actualizado`,
+      message: `Cantidad empacada actualizada para el detalle ${detalleID}`,
       cantidadEmpacada,
-      caja,
     });
   } catch (error) {
     console.error('Error al actualizar cantidad empacada:', error);
+    res.status(500).send('Error del servidor');
+  }
+});
+
+app.put('/detalle-ordenes/:id/caja', verificarToken, async (req, res) => {
+  const detalleID = req.params.id;
+  const { caja } = req.body;
+
+  if (caja == null) {
+    return res.status(400).send('Falta la caja');
+  }
+
+  try {
+    await poolConnect;
+
+    const currentResult = await pool
+      .request()
+      .input('DetalleID', sql.Int, detalleID)
+      .query('SELECT DetalleID FROM dbo.DetalleOrdenes WHERE DetalleID = @DetalleID');
+
+    if (currentResult.recordset.length === 0) {
+      return res.status(404).send('Detalle no encontrado');
+    }
+
+    const updateResult = await pool
+      .request()
+      .input('DetalleID', sql.Int, detalleID)
+      .input('Caja', sql.NVarChar(100), caja)
+      .query(`
+        UPDATE dbo.DetalleOrdenes
+        SET Caja = @Caja
+        WHERE DetalleID = @DetalleID
+      `);
+
+    if (updateResult.rowsAffected[0] === 0) {
+      return res.status(404).send('No se pudo actualizar la caja');
+    }
+
+    res.status(200).json({
+      message: `Caja actualizada para el detalle ${detalleID}`,
+      caja,
+    });
+  } catch (error) {
+    console.error('Error al actualizar la caja:', error);
     res.status(500).send('Error del servidor');
   }
 });

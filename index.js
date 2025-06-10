@@ -506,7 +506,7 @@ app.put('/detalle-ordenes/:id/caja', verificarToken, async (req, res) => {
     const updateResult = await pool
       .request()
       .input('DetalleID', sql.Int, detalleID)
-      .input('Caja', sql.NVarChar(100), caja)
+      .input('Caja', sql.Int(100), caja)
       .query(`
         UPDATE dbo.DetalleOrdenes
         SET Caja = @Caja

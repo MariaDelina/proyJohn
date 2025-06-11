@@ -575,8 +575,8 @@ app.put('/ordenes/:id/finalizar-empaque', verificarToken, async (req, res) => {
   const { FechaEmpaque, FechaFinEmpaque, Caja } = req.body;
 
   // Verificamos que los datos necesarios estén presentes
-  if (!FechaEmpaque || !FechaFinEmpaque || !Caja) {
-    return res.status(400).json({ message: 'Faltan datos requeridos: FechaEmpaque, FechaFinEmpaque o Caja.' });
+  if (!FechaEmpaque || !FechaFinEmpaque) {
+    return res.status(400).json({ message: 'Faltan datos requeridos: FechaEmpaque, FechaFinEmpaque.' });
   }
 
   const Empacador = req.user?.Nombre || req.user?.username || 'Desconocido';

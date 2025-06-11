@@ -572,7 +572,7 @@ app.put('/ordenes/:id/finalizar', verificarToken, async (req, res) => {
 
 app.put('/ordenes/:id/finalizar-empaque', verificarToken, async (req, res) => {
   const { id } = req.params;
-  const { FechaEmpaque, FechaFinEmpaque, Caja } = req.body;
+  const { FechaEmpaque, FechaFinEmpaque } = req.body;
 
   // Verificamos que los datos necesarios estén presentes
   if (!FechaEmpaque || !FechaFinEmpaque) {
@@ -589,7 +589,6 @@ app.put('/ordenes/:id/finalizar-empaque', verificarToken, async (req, res) => {
       .input('FechaEmpaque', sql.DateTime, new Date(FechaEmpaque))
       .input('FechaFinEmpaque', sql.DateTime, new Date(FechaFinEmpaque))
       .input('Empacador', sql.NVarChar(100), Empacador)
-      .input('Caja', sql.NVarChar(50), Caja)
       .input('Estado', sql.NVarChar(50), 'Listo para despachar')
       .query(`
         UPDATE dbo.Ordenes
@@ -597,7 +596,6 @@ app.put('/ordenes/:id/finalizar-empaque', verificarToken, async (req, res) => {
           FechaEmpaque = @FechaEmpaque,
           FechaFinEmpaque = @FechaFinEmpaque,
           Empacador = @Empacador,
-          Caja = @Caja,
           Estado = @Estado
         WHERE Orden = @OrdenID
       `);

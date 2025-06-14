@@ -369,7 +369,7 @@ app.get('/detalle-ordenes', verificarToken, async (req, res) => {
   }
 });
 
-app.get('/ordenes/:id', verificarToken, async (req, res) => {
+app.get('/ordenes-info/:id', verificarToken, async (req, res) => {
   try {
     await poolConnect;
     const { id } = req.params;

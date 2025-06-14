@@ -375,9 +375,9 @@ app.get('/ordenes-info/:id', verificarToken, async (req, res) => {
     const { id } = req.params;
     const result = await pool
       .request()
-      .input('id', sql.Int, id)
-      .query('SELECT * FROM dbo.Ordenes WHERE OrdenID = @id');
-    
+      .input('Orden', sql.Int, id)
+      .query('SELECT * FROM dbo.Ordenes WHERE Orden = @Orden');
+
     if (result.recordset.length === 0) {
       return res.status(404).json({ message: 'Orden no encontrada' });
     }

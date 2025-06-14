@@ -369,6 +369,28 @@ app.get('/detalle-ordenes', verificarToken, async (req, res) => {
   }
 });
 
+app.get('/ordenes', verificarToken, async (req, res) => {
+  try {
+    await poolConnect;
+    const result = await pool.request().query(`
+      SELECT 
+        OrdenID,
+        Cliente,
+        FechaCreacion,
+        Vendedor,
+        Ciudad,
+        Departamento,
+        Direccion,
+        Observacion
+      FROM dbo.Ordenes
+    `);
+    res.json(result.recordset);
+  } catch (error) {
+    console.error('Error al obtener detalles de órdenes:', error);
+    res.status(500).send('Error del servidor');
+  }
+});
+
 // index.js o rutas/detalleOrdenes.js Modificacion de Cantidad en OrdenesDetalle
 app.put('/detalle-ordenes/:id/cantidad', verificarToken, async (req, res) => {
   const detalleID = req.params.id;

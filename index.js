@@ -389,6 +389,59 @@ app.get('/ordenes-info/:id', verificarToken, async (req, res) => {
   }
 });
 
+app.put('/ordenes-info/:id/observacion-sacador', verificarToken, async (req, res) => {
+  try {
+    await poolConnect;
+    const { id } = req.params;
+    const { observacion } = req.body;
+
+    if (!observacion || typeof observacion !== 'string') {
+      return res.status(400).json({ message: 'Observación inválida o faltante' });
+    }
+
+    const result = await pool
+      .request()
+      .input('Orden', sql.Int, id)
+      .input('ObservacionesSacador', sql.NVarChar(sql.MAX), observacion)
+      .query('UPDATE dbo.Ordenes SET ObservacionesSacador = @ObservacionesSacador WHERE Orden = @Orden');
+
+    if (result.rowsAffected[0] === 0) {
+      return res.status(404).json({ message: 'Orden no encontrada' });
+    }
+
+    res.json({ message: 'Observación del sacador actualizada correctamente' });
+  } catch (error) {
+    console.error('Error al actualizar ObservacionesSacador:', error);
+    res.status(500).send('Error del servidor');
+  }
+});
+
+app.put('/ordenes-info/:id/observacion-empacador', verificarToken, async (req, res) => {
+  try {
+    await poolConnect;
+    const { id } = req.params;
+    const { observacion } = req.body;
+
+    if (!observacion || typeof observacion !== 'string') {
+      return res.status(400).json({ message: 'Observación inválida o faltante' });
+    }
+
+    const result = await pool
+      .request()
+      .input('Orden', sql.Int, id)
+      .input('ObservacionesEmpacador', sql.NVarChar(sql.MAX), observacion)
+      .query('UPDATE dbo.Ordenes SET ObservacionesEmpacador = @ObservacionesEmpacador WHERE Orden = @Orden');
+
+    if (result.rowsAffected[0] === 0) {
+      return res.status(404).json({ message: 'Orden no encontrada' });
+    }
+
+    res.json({ message: 'Observación del sacador actualizada correctamente' });
+  } catch (error) {
+    console.error('Error al actualizar ObservacionesEmpacador:', error);
+    res.status(500).send('Error del servidor');
+  }
+});
 
 // index.js o rutas/detalleOrdenes.js Modificacion de Cantidad en OrdenesDetalle
 app.put('/detalle-ordenes/:id/cantidad', verificarToken, async (req, res) => {

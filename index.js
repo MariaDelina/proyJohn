@@ -686,6 +686,28 @@ app.put('/ordenes/:id/finalizar-empaque', verificarToken, async (req, res) => {
 });
 
 
+app.get('/ordenes-terminadas', verificarToken, async (req, res) => {
+  try {
+    await poolConnect;
+    // Query para traer todas las órdenes con estado 'Terminado'
+    // y sus detalles relacionados
+    const query = `
+      SELECT 
+        o.*,
+        d.DetalleID, d.OrdenID, d.Referencia, d.Descripcion, d.Cantidad, d.Caja, d.CantidadReal, d.CantidadEmpacada, d.ValorUnitario, d.DetalleAdicional
+      FROM dbo.Ordenes o
+      LEFT JOIN dbo.DetalleOrdenes d ON o.Orden = d.OrdenID
+      WHERE o.Estado = 'Listo para despachar'
+      ORDER BY o.Orden, d.DetalleID
+    `;
+
+    const result = await pool.request().query(query);
+    res.json(result.recordset);
+  } catch (error) {
+    console.error('Error al obtener órdenes terminadas:', error);
+    res.status(500).send('Error del servidor');
+  }
+});
 
 
 

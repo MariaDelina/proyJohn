@@ -83,16 +83,17 @@ app.post('/auth/register', async (req, res) => {
 
 // 🔐 Login y JWT
 app.post('/auth/login', async (req, res) => {
-  const { Username, Password } = req.body;
-  if (!Username || !Password) {
-    return res.status(400).json({ error: 'Username y Password requeridos' });
+  const { Nombre, Password } = req.body;
+
+  if (!Nombre || !Password) {
+    return res.status(400).json({ error: 'Nombre y Password requeridos' });
   }
 
   try {
     await poolConnect;
     const result = await pool.request()
-      .input('Username', sql.NVarChar(100), Username)
-      .query('SELECT * FROM Usuarios WHERE Username = @Username');
+      .input('Nombre', sql.NVarChar(100), Nombre)
+      .query('SELECT * FROM Usuarios WHERE Nombre = @Nombre');
 
     const user = result.recordset[0];
     if (!user) return res.status(401).json({ error: 'Usuario no encontrado' });
@@ -100,9 +101,11 @@ app.post('/auth/login', async (req, res) => {
     const validPass = await bcrypt.compare(Password, user.Password);
     if (!validPass) return res.status(401).json({ error: 'Contraseña incorrecta' });
 
-    const token = jwt.sign({ id: user.UsuarioID, username: user.Username, rol: user.Rol }, process.env.JWT_SECRET, {
-      expiresIn: '2h'
-    });
+    const token = jwt.sign(
+      { id: user.UsuarioID, username: user.Username, rol: user.Rol },
+      process.env.JWT_SECRET,
+      { expiresIn: '2h' }
+    );
 
     res.json({ token });
   } catch (err) {

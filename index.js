@@ -104,15 +104,17 @@ app.post('/auth/login', async (req, res) => {
     const token = jwt.sign(
       { id: user.UsuarioID, username: user.Username, rol: user.Rol },
       process.env.JWT_SECRET,
-      { expiresIn: '2h' }
+      { expiresIn: '8h' }
     );
 
-    res.json({ token });
+    // ✅ Ahora también enviamos el rol
+    res.json({ token, rol: user.Rol });
   } catch (err) {
     console.error('Error en login:', err);
     res.status(500).send('Error del servidor');
   }
 });
+
 
 // 🟢 Ruta pública (todos los roles)
 app.get('/ordenes', verificarToken, async (req, res) => {
@@ -125,6 +127,74 @@ app.get('/ordenes', verificarToken, async (req, res) => {
     res.status(500).send('Error del servidor');
   }
 });
+//Ruta para traer todo de tabla productos
+app.get('/productos', verificarToken, async (req, res) => {
+  try {
+    await poolConnect;
+    const result = await pool.request().query('SELECT * FROM dbo.Productos');
+    res.json(result.recordset);
+  } catch (err) {
+    console.error('Error al obtener productos:', err);
+    res.status(500).send('Error del servidor');
+  }
+});
+
+app.put('/productos/:id/imagen', verificarToken, async (req, res) => {
+  const { id } = req.params;
+  const { imagen } = req.body;
+
+  if (typeof imagen !== 'string') {
+    return res.status(400).json({ error: 'La URL de la imagen es requerida y debe ser texto' });
+  }
+
+  try {
+    await poolConnect;
+    const result = await pool.request()
+      .input('id', sql.Int, id)
+      .input('imagen', sql.NVarChar(sql.MAX), imagen)
+      .query(`
+        UPDATE Productos
+        SET Imagen = @imagen
+        WHERE ID = @id
+      `);
+
+    if (result.rowsAffected[0] === 0) {
+      return res.status(404).json({ error: 'Producto no encontrado' });
+    }
+
+    res.json({ message: 'Imagen actualizada correctamente' });
+  } catch (error) {
+    console.error('Error al actualizar imagen:', error);
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+});
+
+// Ruta DELETE para borrar solo la imagen de un producto
+app.delete('/productos/:id/imagen', verificarToken, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    await poolConnect;
+    const result = await pool.request()
+      .input('id', sql.Int, id)
+      .query(`
+        UPDATE Productos
+        SET Imagen = NULL
+        WHERE ID = @id
+      `);
+
+    if (result.rowsAffected[0] === 0) {
+      return res.status(404).json({ error: 'Producto no encontrado' });
+    }
+
+    res.json({ message: 'Imagen eliminada correctamente' });
+  } catch (error) {
+    console.error('Error al eliminar imagen:', error);
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+});
+
+
 // 🟠 Ruta que trae solo órdenes con estado pendiente
 app.get('/ordenes/pendientes', verificarToken, async (req, res) => {
   try {
@@ -192,7 +262,7 @@ app.get('/detalle-ordenes/:id', verificarToken, async (req, res) => {
 app.put('/ordenes/:id/estado', verificarToken, async (req, res) => {
   const { id } = req.params;
 
-  const nombreSacador = req.user?.Nombre || req.user?.username || 'Desconocido';
+  const nombreSacador = req.user?.Nombre  || 'Desconocido';
 
   // Fecha y hora actual en la zona horaria de Colombia
   const fechaColombia = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }));
@@ -230,7 +300,7 @@ app.put('/ordenes/:id/estado', verificarToken, async (req, res) => {
 app.put('/ordenes/:id/estado-empaque', verificarToken, async (req, res) => {
   const { id } = req.params;
 
-  const nombreEmpacador = req.user?.Nombre || req.user?.username || 'Desconocido';
+  const nombreEmpacador = req.user?.Nombre  || 'Desconocido';
 
   // Fecha y hora actual en la zona horaria de Colombia
   const fechaColombia = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }));
@@ -295,7 +365,7 @@ app.post('/orden/:id/sacado/start', verificarToken, async (req, res) => {
     await poolConnect;
 
     // 1. Obtener datos del usuario autenticado
-    const username = req.user.username;
+    const nombre = req.user.nombre;
 
     // 2. Verificar que exista la orden
     const ordenExistente = await pool
@@ -312,7 +382,7 @@ app.post('/orden/:id/sacado/start', verificarToken, async (req, res) => {
 
     await pool.request()
       .input('FechaAlistamiento', sql.DateTime, ahora)
-      .input('Sacador', sql.NVarChar(100), username)
+      .input('Sacador', sql.NVarChar(100), nombre)
       .input('FechaInicioSacado', sql.DateTime, ahora)
       .input('Estado', sql.NVarChar(50), 'En proceso')
       .input('Orden', sql.Int, ordenId)
@@ -612,7 +682,7 @@ app.put('/ordenes/:id/finalizar', verificarToken, async (req, res) => {
   const { FechaAlistamiento, FechaFinSacado } = req.body;
 
   // Obtener nombre del usuario desde el token
-  const Sacador = req.user.Nombre || req.user.username || 'Desconocido';
+  const Sacador = req.user.Nombre || 'Desconocido';
 
   if (!FechaAlistamiento || !FechaFinSacado) {
     return res.status(400).json({ message: 'Faltan datos requeridos.' });
@@ -656,7 +726,7 @@ app.put('/ordenes/:id/finalizar-empaque', verificarToken, async (req, res) => {
     return res.status(400).json({ message: 'Faltan datos requeridos: FechaEmpaque, FechaFinEmpaque.' });
   }
 
-  const Empacador = req.user?.Nombre || req.user?.username || 'Desconocido';
+  const Empacador = req.user?.Nombre  || 'Desconocido';
 
   try {
     await poolConnect;

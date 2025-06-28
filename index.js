@@ -194,6 +194,25 @@ app.delete('/productos/:id/imagen', verificarToken, async (req, res) => {
   }
 });
 
+app.get('/productos-detalles-con-imagen', verificarToken, async (req, res) => {
+  try {
+    await poolConnect;
+
+    const result = await pool.request().query(`
+      SELECT 
+        pd.*,
+        p.Imagen
+      FROM DetalleOrdenes pd
+      LEFT JOIN Productos p ON pd.Referencia = p.Referencia
+    `);
+
+    res.json(result.recordset);
+  } catch (err) {
+    console.error('Error al obtener productos detalles con imagen:', err);
+    res.status(500).send('Error del servidor');
+  }
+});
+
 
 // 🟠 Ruta que trae solo órdenes con estado pendiente
 app.get('/ordenes/pendientes', verificarToken, async (req, res) => {

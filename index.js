@@ -781,12 +781,33 @@ app.put('/ordenes/:id/finalizar-empaque', verificarToken, async (req, res) => {
 app.get('/ordenes-terminadas', verificarToken, async (req, res) => {
   try {
     await poolConnect;
-    // Query para traer todas las órdenes con estado 'Terminado'
-    // y sus detalles relacionados
+
     const query = `
       SELECT 
-        o.*,
-        d.DetalleID, d.OrdenID, d.Referencia, d.Descripcion, d.Cantidad, d.Caja, d.CantidadReal, d.CantidadEmpacada, d.ValorUnitario, d.DetalleAdicional
+        o.FechaCreacion,
+        o.Vendedor,
+        o.Cliente,
+        o.Ciudad,
+        o.Departamento,
+        o.Direccion,
+        o.Observaciones,
+        o.ObservacionesSacador,
+        o.ObservacionesEmpacador,
+        o.Sacador,
+        o.Empacador,
+        o.Cedula,
+        o.Orden,
+        d.DetalleID,
+        d.OrdenID,
+        d.Referencia,
+        d.Descripcion,
+        d.Cantidad,
+        d.Caja,
+        d.CantidadReal,
+        d.CantidadEmpacada,
+        d.OrdenOriginal,
+        d.ValorUnitario,
+        d.DetalleAdicional
       FROM dbo.Ordenes o
       LEFT JOIN dbo.DetalleOrdenes d ON o.Orden = d.OrdenID
       WHERE o.Estado = 'Listo para despachar'
@@ -794,9 +815,41 @@ app.get('/ordenes-terminadas', verificarToken, async (req, res) => {
     `;
 
     const result = await pool.request().query(query);
-    res.json(result.recordset);
+
+    // Validación defensiva por si algún dato está malformado
+    const datosSanitizados = result.recordset.map(item => ({
+      ...item,
+      Cantidad: typeof item.Cantidad === 'number' ? item.Cantidad : parseInt(item.Cantidad),
+      CantidadEmpacada: typeof item.CantidadEmpacada === 'number' ? item.CantidadEmpacada : parseInt(item.CantidadEmpacada),
+    }));
+
+    res.json(datosSanitizados);
   } catch (error) {
     console.error('Error al obtener órdenes terminadas:', error);
+    res.status(500).send('Error del servidor');
+  }
+});
+
+
+app.put('/ordenes/:id/finalizar-revision', verificarToken, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    await poolConnect;
+
+    const query = `
+      UPDATE dbo.Ordenes
+      SET Estado = 'Terminado'
+      WHERE Orden = @id
+    `;
+
+    await pool.request()
+      .input('id', id)
+      .query(query);
+
+    res.status(200).json({ message: 'Estado actualizado a Terminado' });
+  } catch (error) {
+    console.error('Error al finalizar revisión:', error);
     res.status(500).send('Error del servidor');
   }
 });

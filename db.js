@@ -1,4 +1,3 @@
-// db.js
 const sql = require('mssql');
 require('dotenv').config();
 
@@ -9,7 +8,7 @@ const config = {
   database: process.env.DB_DATABASE,
   port: parseInt(process.env.DB_PORT),
   options: {
-    trustServerCertificate: true, // para conexiones locales
+    trustServerCertificate: true,
   },
 };
 
@@ -17,5 +16,7 @@ const pool = new sql.ConnectionPool(config);
 const poolConnect = pool.connect();
 
 module.exports = {
-  sql, pool, poolConnect
+  sql,
+  pool,
+  poolConnect,
 };

@@ -1,13 +1,26 @@
 // index.js
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+
 const express = require('express');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const { pool, sql, poolConnect } = require('./db');
+const { pool, sql, poolConnect, poolPromise  } = require('./db');
 require('dotenv').config();
 const cors = require('cors');
 
 const app = express();
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Asegurar carpeta 'uploads' existe
+if (!fs.existsSync('uploads')) {
+  fs.mkdirSync('uploads');
+}
+
+// 💡 Este es el que te interesa
+app.use('/uploads', express.static('uploads')); 
 
 const PORT = process.env.PORT || 3000;
 
@@ -17,12 +30,15 @@ const verificarToken = (req, res, next) => {
   const token = authHeader && authHeader.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'Token no proporcionado' });
 
-  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
     if (err) return res.status(403).json({ error: 'Token inválido' });
-    req.user = user;
+
+    // ✅ Extraemos el ID y lo guardamos en req.usuarioId
+    req.usuarioId = decoded.id;
     next();
   });
 };
+
 
 // 🔐 Middleware: verificar rol
 const verificarRol = (rolesPermitidos) => {
@@ -51,7 +67,18 @@ app.use(cors({
   credentials: true
 }));
 
+//upload img desde celular
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'uploads/'); // carpeta local, asegurate que exista
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    cb(null, `${uniqueSuffix}${path.extname(file.originalname)}`);
+  },
+});
 
+const upload = multer({ storage });
 // 🧠 Registrar usuario
 app.post('/auth/register', async (req, res) => {
   const { Username, Password, Nombre, Apellido, Celular, Rol } = req.body;
@@ -96,24 +123,39 @@ app.post('/auth/login', async (req, res) => {
       .query('SELECT * FROM Usuarios WHERE Nombre = @Nombre');
 
     const user = result.recordset[0];
-    if (!user) return res.status(401).json({ error: 'Usuario no encontrado' });
+    if (!user) {
+      return res.status(401).json({ error: 'Usuario no encontrado' });
+    }
 
     const validPass = await bcrypt.compare(Password, user.Password);
-    if (!validPass) return res.status(401).json({ error: 'Contraseña incorrecta' });
+    if (!validPass) {
+      return res.status(401).json({ error: 'Contraseña incorrecta' });
+    }
 
+    // 🔐 Generamos el token incluyendo el id, username y rol
     const token = jwt.sign(
-      { id: user.UsuarioID, username: user.Username, rol: user.Rol },
+      {
+        id: user.UsuarioID,          // <- este ID se extraerá luego en rutas protegidas
+        username: user.Username,
+        rol: user.Rol,
+      },
       process.env.JWT_SECRET,
       { expiresIn: '8h' }
     );
 
-    // ✅ Ahora también enviamos el rol
-    res.json({ token, rol: user.Rol });
+    // ✅ Enviamos el token + datos que el frontend necesita guardar
+    res.json({
+      token,
+      rol: user.Rol,
+      usuarioId: user.UsuarioID,
+    });
   } catch (err) {
     console.error('Error en login:', err);
     res.status(500).send('Error del servidor');
   }
 });
+
+
 
 
 // 🟢 Ruta pública (todos los roles)
@@ -780,7 +822,7 @@ app.put('/ordenes/:id/finalizar-empaque', verificarToken, async (req, res) => {
 
 app.get('/ordenes-terminadas', verificarToken, async (req, res) => {
   try {
-    await poolConnect;
+   await poolConnect;;
 
     const query = `
       SELECT 
@@ -854,6 +896,234 @@ app.put('/ordenes/:id/finalizar-revision', verificarToken, async (req, res) => {
   }
 });
 
+// Crear tarea y asignarla
+app.post('/crear-con-asignacion', async (req, res) => {
+  const {
+    nombre,
+    descripcion,
+    tipoTarea,
+    frecuencia,
+    creadoPor,
+    operarioId,
+    fechaAsignacion,
+    fechaVencimiento,
+  } = req.body;
+
+  try {
+    if (!nombre || !tipoTarea || !creadoPor || !operarioId || !fechaAsignacion) {
+      return res.status(400).json({ error: 'Faltan datos obligatorios' });
+    }
+    if (isNaN(parseInt(creadoPor)) || isNaN(parseInt(operarioId))) {
+      return res.status(400).json({ error: 'creadoPor y operarioId deben ser números' });
+    }
+    const fechaAsign = new Date(fechaAsignacion);
+    const fechaVenc = fechaVencimiento ? new Date(fechaVencimiento) : null;
+    if (isNaN(fechaAsign.getTime()) || (fechaVencimiento && isNaN(fechaVenc.getTime()))) {
+      return res.status(400).json({ error: 'Fechas inválidas' });
+    }
+
+    await poolConnect;
+
+    const transaction = new sql.Transaction(pool);
+    await transaction.begin();
+
+    try {
+      const request1 = new sql.Request(transaction);
+      const tareaResult = await request1
+        .input('Nombre', sql.NVarChar(100), nombre)
+        .input('Descripcion', sql.NVarChar(255), descripcion || null)
+        .input('TipoTarea', sql.NVarChar(20), tipoTarea)
+        .input('Frecuencia', sql.NVarChar(50), frecuencia || null)
+        .input('CreadoPor', sql.Int, creadoPor)
+        .input('Estado', sql.NVarChar(20), 'pendiente') // <-- estado de la tarea
+        .query(`
+          INSERT INTO dbo.Tareas (Nombre, Descripcion, TipoTarea, Frecuencia, CreadoPor, Estado)
+          OUTPUT INSERTED.TareaID
+          VALUES (@Nombre, @Descripcion, @TipoTarea, @Frecuencia, @CreadoPor, @Estado)
+        `);
+
+      const tareaId = tareaResult.recordset[0].TareaID;
+
+      const request2 = new sql.Request(transaction);
+      await request2
+        .input('TareaID', sql.Int, tareaId)
+        .input('OperarioID', sql.Int, operarioId)
+        .input('FechaAsignacion', sql.DateTime, fechaAsign)
+        .input('FechaVencimiento', sql.DateTime, fechaVenc)
+        .input('Estado', sql.NVarChar(20), 'pendiente')
+        .query(`
+          INSERT INTO dbo.AsignacionesTareas (TareaID, OperarioID, FechaAsignacion, FechaVencimiento, Estado)
+          VALUES (@TareaID, @OperarioID, @FechaAsignacion, @FechaVencimiento, @Estado)
+        `);
+
+      await transaction.commit();
+
+      res.status(201).json({ success: true, tareaId });
+    } catch (err) {
+      await transaction.rollback();
+      throw err;
+    }
+
+  } catch (err) {
+    console.error('Error al crear tarea:', err);
+    res.status(500).json({ error: 'Error al crear la tarea y asignación' });
+  }
+});
+
+
+
+app.get('/tareas-asignadas/:usuarioId', async (req, res) => {
+  const { usuarioId } = req.params;
+
+  try {
+    await poolConnect;
+    const request = pool.request();
+
+    const result = await request
+      .input('UsuarioID', sql.Int, usuarioId)
+      .query(`
+        SELECT
+          T.TareaID,
+          T.Nombre AS NombreTarea,
+          T.Descripcion,
+          T.Estado AS EstadoTarea,
+          A.AsignacionID,
+          A.CriteriosEvaluacion,
+          U.Nombre AS NombreOperario,
+          E.Enlace AS Evidencia,
+          E.Notas,
+          E.TipoArchivo,
+          E.TamanoArchivo,
+          E.ThumbnailLink,
+          E.FechaSubida,
+          E.SubidoPor,
+          E.EvidenciaID
+        FROM dbo.AsignacionesTareas A
+        INNER JOIN dbo.Tareas T ON A.TareaID = T.TareaID
+        INNER JOIN dbo.Usuarios U ON A.OperarioID = U.UsuarioID
+        LEFT JOIN dbo.EvidenciasTareas E ON E.AsignacionID = A.AsignacionID
+        WHERE A.OperarioID = @UsuarioID AND A.Estado = 'pendiente'
+        ORDER BY T.FechaCreacion DESC
+      `);
+
+    res.json({ success: true, tareas: result.recordset });
+  } catch (error) {
+    console.error('Error al obtener tareas asignadas:', error);
+    res.status(500).json({ error: 'Error al obtener tareas asignadas' });
+  }
+});
+
+app.get('/tareas-en-proceso/:usuarioId', async (req, res) => {
+  const { usuarioId } = req.params;
+
+  try {
+    await poolConnect;
+    const request = pool.request();
+
+    const result = await request
+      .input('UsuarioID', sql.Int, usuarioId)
+      .query(`
+        SELECT
+          T.TareaID,
+          T.Nombre AS NombreTarea,
+          T.Descripcion,
+          T.Estado AS EstadoTarea,
+          A.AsignacionID,
+          A.CriteriosEvaluacion,
+          U.Nombre AS NombreOperario,
+          E.Enlace AS Evidencia,
+          E.Notas,
+          E.TipoArchivo,
+          E.TamanoArchivo,
+          E.ThumbnailLink,
+          E.FechaSubida,
+          E.SubidoPor,
+          E.EvidenciaID
+        FROM dbo.AsignacionesTareas A
+        INNER JOIN dbo.Tareas T ON A.TareaID = T.TareaID
+        INNER JOIN dbo.Usuarios U ON A.OperarioID = U.UsuarioID
+        LEFT JOIN dbo.EvidenciasTareas E ON E.AsignacionID = A.AsignacionID
+        WHERE A.OperarioID = @UsuarioID AND A.Estado = 'en proceso'
+        ORDER BY T.FechaCreacion DESC
+      `);
+
+    res.json({ success: true, tareas: result.recordset });
+  } catch (error) {
+    console.error('Error al obtener tareas en proceso:', error);
+    res.status(500).json({ error: 'Error al obtener tareas en proceso' });
+  }
+});
+
+
+app.put('/tarea/:tareaId/finalizar', upload.single('evidencia'), async (req, res) => {
+  const { tareaId } = req.params;
+  const { subidoPor } = req.body;
+  const file = req.file;
+
+  if (!file) {
+    return res.status(400).json({ error: 'No se recibió ninguna evidencia' });
+  }
+
+  try {
+    await poolConnect;
+
+    // Obtener AsignacionID
+    const asignacionRes = await pool.request()
+  .input('TareaID', sql.Int, tareaId)
+  .query(`
+    SELECT TOP 1 AsignacionID, OperarioID
+    FROM dbo.AsignacionesTareas
+    WHERE TareaID = @TareaID
+  `);
+
+    const asignacionId = asignacionRes.recordset[0]?.AsignacionID;
+    if (!asignacionId) {
+      return res.status(404).json({ error: 'Asignación no encontrada' });
+    }
+
+    // Insertar evidencia
+    await pool.request()
+      .input('AsignacionID', sql.Int, asignacionId)
+      .input('SubidoPor', sql.Int, subidoPor)
+      .input('Enlace', sql.NVarChar(255), `/uploads/${file.filename}`)
+      .input('TipoArchivo', sql.NVarChar(50), file.mimetype)
+      .input('TamanoArchivo', sql.Int, file.size)
+      .input('FechaSubida', sql.DateTime, new Date())
+      .query(`
+        INSERT INTO dbo.EvidenciasTareas (AsignacionID, SubidoPor, Enlace, TipoArchivo, TamanoArchivo, FechaSubida)
+        VALUES (@AsignacionID, @SubidoPor, @Enlace, @TipoArchivo, @TamanoArchivo, @FechaSubida)
+      `);
+
+    // Marcar asignación como "en proceso"
+await pool.request()
+  .input('AsignacionID', sql.Int, asignacionId)
+  .query(`UPDATE dbo.AsignacionesTareas SET Estado = 'en proceso' WHERE AsignacionID = @AsignacionID`);
+
+
+    res.json({ success: true, mensaje: 'Tarea finalizada y evidencia guardada' });
+  } catch (err) {
+    console.error('Error al finalizar tarea con evidencia:', err);
+    res.status(500).json({ error: 'Error al procesar la tarea y evidencia' });
+  }
+});
+//listar usuarios en asignacion de usuario
+app.get('/usuarios-operarios', async (req, res) => {
+  try {
+    await poolConnect; // asegurarse de que la conexión esté lista
+
+    const request = new sql.Request(pool);
+    const result = await request.query(`
+      SELECT UsuarioID, Nombre, Apellido
+      FROM dbo.Usuarios
+      WHERE Rol = 'operario'
+    `);
+
+    res.json(result.recordset);
+  } catch (err) {
+    console.error('Error al obtener operarios:', err);
+    res.status(500).json({ error: 'Error al obtener operarios' });
+  }
+});
 
 
 app.listen(PORT, () => {

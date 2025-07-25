@@ -2,11 +2,11 @@
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-
+const { generateBlobSASQueryParameters, BlobSASPermissions, StorageSharedKeyCredential } = require('@azure/storage-blob');
 const express = require('express');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const { pool, sql, poolConnect, poolPromise  } = require('./db');
+const { pool, sql, poolConnect } = require('./db');
 require('dotenv').config();
 const cors = require('cors');
 
@@ -14,13 +14,10 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Asegurar carpeta 'uploads' existe
-if (!fs.existsSync('uploads')) {
-  fs.mkdirSync('uploads');
-}
-
-// 💡 Este es el que te interesa
-app.use('/uploads', express.static('uploads')); 
+const { Readable } = require('stream');
+const containerClient = require('./azureBlob'); // tu archivo azureBlob.js
+const storage = multer.memoryStorage(); // 👈 guardamos en memoria, no en disco
+const upload = multer({ storage }); 
 
 const PORT = process.env.PORT || 3000;
 
@@ -33,11 +30,11 @@ const verificarToken = (req, res, next) => {
   jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
     if (err) return res.status(403).json({ error: 'Token inválido' });
 
-    // ✅ Extraemos el ID y lo guardamos en req.usuarioId
-    req.usuarioId = decoded.id;
+    req.user = decoded; // ⬅️ Esto permite acceder a req.user.Nombre
     next();
   });
 };
+
 
 
 // 🔐 Middleware: verificar rol
@@ -67,18 +64,7 @@ app.use(cors({
   credentials: true
 }));
 
-//upload img desde celular
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, 'uploads/'); // carpeta local, asegurate que exista
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    cb(null, `${uniqueSuffix}${path.extname(file.originalname)}`);
-  },
-});
 
-const upload = multer({ storage });
 // 🧠 Registrar usuario
 app.post('/auth/register', async (req, res) => {
   const { Username, Password, Nombre, Apellido, Celular, Rol } = req.body;
@@ -138,6 +124,7 @@ app.post('/auth/login', async (req, res) => {
         id: user.UsuarioID,          // <- este ID se extraerá luego en rutas protegidas
         username: user.Username,
         rol: user.Rol,
+        Nombre: user.Nombre
       },
       process.env.JWT_SECRET,
       { expiresIn: '8h' }
@@ -148,6 +135,7 @@ app.post('/auth/login', async (req, res) => {
       token,
       rol: user.Rol,
       usuarioId: user.UsuarioID,
+      nombre: user.Nombre,
     });
   } catch (err) {
     console.error('Error en login:', err);
@@ -262,7 +250,12 @@ app.get('/ordenes/pendientes', verificarToken, async (req, res) => {
     await poolConnect;
     const result = await pool
       .request()
-      .query("SELECT * FROM dbo.Ordenes WHERE Estado = 'pendiente'");
+      .query(`
+        SELECT * FROM dbo.Ordenes 
+        WHERE 
+          Estado = 'pendiente' OR 
+          (Estado = 'En Proceso' AND FechaFinSacado IS NULL)
+      `);
 
     res.json(result.recordset);
   } catch (err) {
@@ -270,17 +263,24 @@ app.get('/ordenes/pendientes', verificarToken, async (req, res) => {
     res.status(500).send('Error del servidor');
   }
 });
+
+
 //Empacar Pedido segun estado Listo para empacar
 app.get('/ordenes/listoparaempacar', verificarToken, async (req, res) => {
   try {
     await poolConnect;
     const result = await pool
       .request()
-      .query("SELECT * FROM dbo.Ordenes WHERE Estado = 'Listo para empacar'");
+      .query(`
+        SELECT * FROM dbo.Ordenes 
+        WHERE 
+          (Estado = 'En Proceso' OR Estado = 'Listo para empacar' OR Estado = 'empacando')
+          AND FechaFinEmpaque IS NULL
+      `);
 
     res.json(result.recordset);
   } catch (err) {
-    console.error('Error al obtener órdenes pendientes:', err);
+    console.error('Error al obtener órdenes para empacar:', err);
     res.status(500).send('Error del servidor');
   }
 });
@@ -799,13 +799,15 @@ app.put('/ordenes/:id/finalizar-empaque', verificarToken, async (req, res) => {
       .input('Empacador', sql.NVarChar(100), Empacador)
       .input('Estado', sql.NVarChar(50), 'Listo para despachar')
       .query(`
-        UPDATE dbo.Ordenes
-        SET 
-          FechaEmpaque = @FechaEmpaque,
-          FechaFinEmpaque = @FechaFinEmpaque,
-          Empacador = @Empacador,
-          Estado = @Estado
-        WHERE Orden = @OrdenID
+        -- Agregá un filtro para no sobreescribir el Sacador
+UPDATE dbo.Ordenes
+SET 
+  FechaEmpaque = @FechaEmpaque,
+  FechaFinEmpaque = @FechaFinEmpaque,
+  Empacador = @Empacador,
+  Estado = @Estado
+WHERE Orden = @OrdenID AND Sacador IS NOT NULL
+
       `);
 
     if (result.rowsAffected[0] === 0) {
@@ -872,6 +874,28 @@ app.get('/ordenes-terminadas', verificarToken, async (req, res) => {
   }
 });
 
+app.post('/obtener-url-subida', async (req, res) => {
+  const { fileName, fileType } = req.body;
+
+  const account = process.env.AZURE_STORAGE_ACCOUNT_NAME;
+  const key = process.env.AZURE_STORAGE_ACCOUNT_KEY;
+  const container = process.env.AZURE_STORAGE_CONTAINER_NAME;
+
+  const sharedKeyCredential = new StorageSharedKeyCredential(account, key);
+
+  const blobName = `${Date.now()}-${fileName}`;
+  const sasOptions = {
+    containerName: container,
+    blobName,
+    permissions: BlobSASPermissions.parse('cw'), // create + write
+    expiresOn: new Date(new Date().valueOf() + 10 * 60 * 1000),
+  };
+
+  const sasToken = generateBlobSASQueryParameters(sasOptions, sharedKeyCredential).toString();
+  const uploadUrl = `https://${account}.blob.core.windows.net/${container}/${blobName}?${sasToken}`;
+
+  res.json({ uploadUrl, blobUrl: uploadUrl.split('?')[0] }); // `blobUrl` es el que guardarás luego
+});
 
 app.put('/ordenes/:id/finalizar-revision', verificarToken, async (req, res) => {
   const { id } = req.params;
@@ -1055,57 +1079,45 @@ app.get('/tareas-en-proceso/:usuarioId', async (req, res) => {
 });
 
 
-app.put('/tarea/:tareaId/finalizar', upload.single('evidencia'), async (req, res) => {
+app.put('/tarea/:tareaId/finalizar', async (req, res) => {
   const { tareaId } = req.params;
-  const { subidoPor } = req.body;
-  const file = req.file;
-
-  if (!file) {
-    return res.status(400).json({ error: 'No se recibió ninguna evidencia' });
-  }
+  const { subidoPor, evidenciaUrl, notas } = req.body;
 
   try {
     await poolConnect;
 
-    // Obtener AsignacionID
     const asignacionRes = await pool.request()
-  .input('TareaID', sql.Int, tareaId)
-  .query(`
-    SELECT TOP 1 AsignacionID, OperarioID
-    FROM dbo.AsignacionesTareas
-    WHERE TareaID = @TareaID
-  `);
+      .input('TareaID', sql.Int, tareaId)
+      .query(`SELECT TOP 1 AsignacionID FROM dbo.AsignacionesTareas WHERE TareaID = @TareaID`);
 
     const asignacionId = asignacionRes.recordset[0]?.AsignacionID;
     if (!asignacionId) {
       return res.status(404).json({ error: 'Asignación no encontrada' });
     }
 
-    // Insertar evidencia
     await pool.request()
       .input('AsignacionID', sql.Int, asignacionId)
       .input('SubidoPor', sql.Int, subidoPor)
-      .input('Enlace', sql.NVarChar(255), `/uploads/${file.filename}`)
-      .input('TipoArchivo', sql.NVarChar(50), file.mimetype)
-      .input('TamanoArchivo', sql.Int, file.size)
+      .input('Enlace', sql.NVarChar(255), evidenciaUrl)
+      .input('TipoArchivo', sql.NVarChar(50), 'desconocido') // o sacalo si no lo usás
+      .input('TamanoArchivo', sql.Int, 0) // opcional
       .input('FechaSubida', sql.DateTime, new Date())
       .query(`
         INSERT INTO dbo.EvidenciasTareas (AsignacionID, SubidoPor, Enlace, TipoArchivo, TamanoArchivo, FechaSubida)
         VALUES (@AsignacionID, @SubidoPor, @Enlace, @TipoArchivo, @TamanoArchivo, @FechaSubida)
       `);
 
-    // Marcar asignación como "en proceso"
-await pool.request()
-  .input('AsignacionID', sql.Int, asignacionId)
-  .query(`UPDATE dbo.AsignacionesTareas SET Estado = 'en proceso' WHERE AsignacionID = @AsignacionID`);
+    await pool.request()
+      .input('AsignacionID', sql.Int, asignacionId)
+      .query(`UPDATE dbo.AsignacionesTareas SET Estado = 'en proceso' WHERE AsignacionID = @AsignacionID`);
 
-
-    res.json({ success: true, mensaje: 'Tarea finalizada y evidencia guardada' });
+    res.json({ success: true, mensaje: 'Tarea finalizada y evidencia registrada' });
   } catch (err) {
-    console.error('Error al finalizar tarea con evidencia:', err);
-    res.status(500).json({ error: 'Error al procesar la tarea y evidencia' });
+    console.error('Error al guardar evidencia:', err);
+    res.status(500).json({ error: 'Error al guardar la evidencia' });
   }
 });
+
 //listar usuarios en asignacion de usuario
 app.get('/usuarios-operarios', async (req, res) => {
   try {

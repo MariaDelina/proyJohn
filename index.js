@@ -18,6 +18,11 @@ const { Readable } = require('stream');
 const containerClient = require('./azureBlob'); // tu archivo azureBlob.js
 const storage = multer.memoryStorage(); // 👈 guardamos en memoria, no en disco
 const upload = multer({ storage }); 
+const dayjs = require('dayjs');
+const utc = require('dayjs/plugin/utc');
+const timezone = require('dayjs/plugin/timezone');
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 const PORT = process.env.PORT || 3000;
 
@@ -248,13 +253,15 @@ app.get('/productos-detalles-con-imagen', verificarToken, async (req, res) => {
 app.get('/ordenes/pendientes', verificarToken, async (req, res) => {
   try {
     await poolConnect;
+
     const result = await pool
       .request()
       .query(`
-        SELECT * FROM dbo.Ordenes 
+        SELECT *
+        FROM dbo.Ordenes 
         WHERE 
-          Estado = 'pendiente' OR 
-          (Estado = 'En Proceso' AND FechaFinSacado IS NULL)
+          Estado IN ('Pendiente', 'En Proceso', 'Empacando')
+          AND (FechaFinSacado IS NULL OR LTRIM(RTRIM(FechaFinSacado)) = '')
       `);
 
     res.json(result.recordset);
@@ -269,21 +276,25 @@ app.get('/ordenes/pendientes', verificarToken, async (req, res) => {
 app.get('/ordenes/listoparaempacar', verificarToken, async (req, res) => {
   try {
     await poolConnect;
-    const result = await pool
-      .request()
-      .query(`
-        SELECT * FROM dbo.Ordenes 
-        WHERE 
-          (Estado = 'En Proceso' OR Estado = 'Listo para empacar' OR Estado = 'empacando')
-          AND FechaFinEmpaque IS NULL
-      `);
+
+    const result = await pool.request().query(`
+      SELECT *
+      FROM dbo.Ordenes
+      WHERE 
+        Estado IN ('Listo para empacar', 'Empacando', 'En Proceso')
+        AND (FechaFinEmpaque IS NULL OR LTRIM(RTRIM(FechaFinEmpaque)) = '')
+    `);
 
     res.json(result.recordset);
   } catch (err) {
     console.error('Error al obtener órdenes para empacar:', err);
-    res.status(500).send('Error del servidor');
+    return res.status(500).send('Error del servidor');
   }
 });
+
+
+
+
 
 // recuperar productos y detalles de orden
 app.get('/detalle-ordenes/:id', verificarToken, async (req, res) => {
@@ -318,15 +329,11 @@ app.get('/detalle-ordenes/:id', verificarToken, async (req, res) => {
   }
 });
 
-
-//put para estado en Sacar-Pedido
 app.put('/ordenes/:id/estado', verificarToken, async (req, res) => {
   const { id } = req.params;
+  const nombreSacador = req.user?.Nombre || 'Desconocido';
 
-  const nombreSacador = req.user?.Nombre  || 'Desconocido';
-
-  // Fecha y hora actual en la zona horaria de Colombia
-  const fechaColombia = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }));
+const fechaColombia = dayjs().tz('America/Bogota').toDate();
 
   try {
     await poolConnect;
@@ -364,7 +371,9 @@ app.put('/ordenes/:id/estado-empaque', verificarToken, async (req, res) => {
   const nombreEmpacador = req.user?.Nombre  || 'Desconocido';
 
   // Fecha y hora actual en la zona horaria de Colombia
-  const fechaColombia = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }));
+   const fechaBogotaStr = dayjs().tz('America/Bogota').format('YYYY-MM-DD HH:mm:ss');
+ const fechaColombia = dayjs().tz('America/Bogota').toDate();
+
 
   try {
     await poolConnect;
@@ -1117,6 +1126,35 @@ app.put('/tarea/:tareaId/finalizar', async (req, res) => {
     res.status(500).json({ error: 'Error al guardar la evidencia' });
   }
 });
+//asignar ORDENES
+
+
+// PUT /ordenes/:id/asignar
+app.put('/ordenes/:id/asignar', verificarToken, async (req, res) => {
+  const { id } = req.params;
+  const { operarioId } = req.body;
+
+  if (!operarioId) {
+    return res.status(400).json({ error: 'Falta el ID del operario' });
+  }
+
+  try {
+    await pool.request()
+      .input('ordenId', sql.Int, parseInt(id))
+      .input('operarioId', sql.Int, operarioId)
+      .query(`
+        UPDATE Ordenes
+        SET OperarioID = @operarioId
+        WHERE Orden = @ordenId
+      `);
+
+    res.json({ message: 'Orden asignada correctamente' });
+  } catch (err) {
+    console.error('Error al asignar orden:', err);
+    res.status(500).json({ error: 'Error al asignar la orden' });
+  }
+});
+
 
 //listar usuarios en asignacion de usuario
 app.get('/usuarios-operarios', async (req, res) => {

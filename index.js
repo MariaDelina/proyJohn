@@ -311,6 +311,8 @@ app.get('/detalle-ordenes/:id', verificarToken, async (req, res) => {
           OrdenID,
           Cantidad,
           CantidadReal,
+          CantidadEmpacada,
+          Caja,
           ValorUnitario,
           Ubicacion,
           DetalleAdicional,

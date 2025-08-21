@@ -1176,6 +1176,43 @@ app.get('/usuarios-operarios', async (req, res) => {
     res.status(500).json({ error: 'Error al obtener operarios' });
   }
 });
+// Productos segun la referencia Stock
+app.get('/productos/:referencia', verificarToken, async (req, res) => {
+  const { referencia } = req.params;
+
+  try {
+    await poolConnect;
+
+    const result = await pool.request()
+      .input('Referencia', sql.VarChar, referencia)
+      .query('SELECT Referencia, Nombre, Stock FROM dbo.Productos WHERE Referencia = @Referencia');
+
+    if (result.recordset.length === 0) {
+      return res.status(404).json({ mensaje: 'No se encontró el producto' });
+    }
+
+    res.json(result.recordset[0]); // devuelve un único producto
+  } catch (err) {
+    console.error('Error al obtener producto:', err);
+    res.status(500).send('Error del servidor');
+  }
+});
+//buscar por referencia, sugerencias 
+// Todas las referencias (filtrado en SQL con LIKE si quieres autocomplete en el servidor)
+app.get('/productos-referencias', verificarToken, async (req, res) => {
+  try {
+    await poolConnect;
+
+    const result = await pool.request()
+      .query('SELECT Referencia FROM dbo.Productos');
+
+    res.json(result.recordset); // lista de objetos con Referencia
+  } catch (err) {
+    console.error('Error al obtener referencias:', err);
+    res.status(500).send('Error del servidor');
+  }
+});
+
 
 
 app.listen(PORT, () => {

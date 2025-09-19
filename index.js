@@ -55,7 +55,8 @@ const verificarRol = (rolesPermitidos) => {
 const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:5173',
-  'https://wgimportaciones-aec89.web.app'
+  'https://wgimportaciones-aec89.web.app',
+  
 ];
 
 app.use(cors({
@@ -307,21 +308,24 @@ app.get('/detalle-ordenes/:id', verificarToken, async (req, res) => {
       .input('OrdenID', sql.Int, id)
       .query(`
         SELECT 
-          DetalleID,
-          OrdenID,
-          Cantidad,
-          CantidadReal,
-          CantidadEmpacada,
-          Caja,
-          ValorUnitario,
-          Ubicacion,
-          DetalleAdicional,
-          Secuencia,
-          Referencia,
-          Descripcion
-        FROM dbo.DetalleOrdenes
-        WHERE OrdenID = @OrdenID
-        ORDER BY Secuencia
+          d.DetalleID,
+          d.OrdenID,
+          d.Cantidad,
+          d.CantidadReal,
+          d.CantidadEmpacada,
+          d.Caja,
+          d.ValorUnitario,
+          d.Ubicacion,
+          d.DetalleAdicional,
+          o.Observaciones,     -- 🔹 viene de la tabla Ordenes
+          d.Secuencia,
+          d.Referencia,
+          d.Descripcion
+        FROM dbo.DetalleOrdenes d
+        LEFT JOIN dbo.Ordenes o
+          ON d.OrdenID = o.Orden   -- 🔹 cambiar según el nombre correcto
+        WHERE d.OrdenID = @OrdenID
+        ORDER BY d.Secuencia
       `);
 
     res.json(result.recordset);
@@ -330,6 +334,7 @@ app.get('/detalle-ordenes/:id', verificarToken, async (req, res) => {
     res.status(500).json({ mensaje: 'Error del servidor' });
   }
 });
+
 
 app.put('/ordenes/:id/estado', verificarToken, async (req, res) => {
   const { id } = req.params;
